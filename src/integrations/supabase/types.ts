@@ -14,7 +14,137 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      expenses: {
+        Row: {
+          amount: number
+          category: string
+          created_at: string
+          currency: string
+          date: string
+          description: string | null
+          id: string
+          receipt_id: string | null
+          updated_at: string
+          user_id: string
+          vendor: string | null
+        }
+        Insert: {
+          amount: number
+          category: string
+          created_at?: string
+          currency?: string
+          date: string
+          description?: string | null
+          id?: string
+          receipt_id?: string | null
+          updated_at?: string
+          user_id: string
+          vendor?: string | null
+        }
+        Update: {
+          amount?: number
+          category?: string
+          created_at?: string
+          currency?: string
+          date?: string
+          description?: string | null
+          id?: string
+          receipt_id?: string | null
+          updated_at?: string
+          user_id?: string
+          vendor?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expenses_receipt_id_fkey"
+            columns: ["receipt_id"]
+            isOneToOne: false
+            referencedRelation: "receipts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      receipts: {
+        Row: {
+          created_at: string
+          currency: string | null
+          file_name: string
+          file_url: string
+          id: string
+          invoice_date: string | null
+          invoice_no: string | null
+          parse_status: string | null
+          raw_data: Json | null
+          subtotal: number | null
+          tax: number | null
+          total: number | null
+          updated_at: string
+          user_id: string
+          vendor: string | null
+        }
+        Insert: {
+          created_at?: string
+          currency?: string | null
+          file_name: string
+          file_url: string
+          id?: string
+          invoice_date?: string | null
+          invoice_no?: string | null
+          parse_status?: string | null
+          raw_data?: Json | null
+          subtotal?: number | null
+          tax?: number | null
+          total?: number | null
+          updated_at?: string
+          user_id: string
+          vendor?: string | null
+        }
+        Update: {
+          created_at?: string
+          currency?: string | null
+          file_name?: string
+          file_url?: string
+          id?: string
+          invoice_date?: string | null
+          invoice_no?: string | null
+          parse_status?: string | null
+          raw_data?: Json | null
+          subtotal?: number | null
+          tax?: number | null
+          total?: number | null
+          updated_at?: string
+          user_id?: string
+          vendor?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

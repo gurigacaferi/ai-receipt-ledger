@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ParseStatus, ParsedReceipt } from "@/types/expense";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 
 const UploadPage = () => {
@@ -13,6 +15,7 @@ const UploadPage = () => {
   const [parsedData, setParsedData] = useState<ParsedReceipt | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const handleImageResize = (file: File): Promise<File> => {
     return new Promise((resolve) => {
@@ -42,38 +45,19 @@ const UploadPage = () => {
     });
   };
 
-  const parseReceipt = async (file: File) => {
+  const parseReceipt = async (file: File, receiptId: string) => {
     setParseStatus({ status: "parsing", message: "Parsing receipt..." });
     
     try {
-      // Use document parser for OCR
-      const tempPath = `temp-${Date.now()}-${file.name}`;
-      
-      // Create a temporary file URL for parsing
-      const fileUrl = URL.createObjectURL(file);
-      
-      // Simulate AI parsing response (in real app this would call OpenAI)
-      const mockParsedData: ParsedReceipt = {
-        vendor: "Sample Store",
-        invoice_no: "INV-001",
-        invoice_date: new Date().toISOString().split('T')[0],
-        currency: "EUR",
-        items: [
-          {
-            description: "Sample Item",
-            qty: 1,
-            unit_price: 10.50,
-            line_total: 10.50,
-            category: "Tjetër"
-          }
-        ],
-        subtotal: 10.50,
-        tax: 2.10,
-        total: 12.60,
-        guessed_categories: true
-      };
+      const { data, error } = await supabase.functions.invoke('parse-receipt', {
+        body: { receiptId }
+      });
 
-      setParsedData(mockParsedData);
+      if (error) {
+        throw error;
+      }
+
+      setParsedData(data);
       setParseStatus({ 
         status: "done", 
         message: "Receipt parsed successfully!" 
@@ -81,10 +65,11 @@ const UploadPage = () => {
       
       toast({
         title: "Success",
-        description: "Receipt has been parsed and processed.",
+        description: "Receipt has been parsed and expenses created.",
       });
       
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Parse error:', error);
       setParseStatus({ 
         status: "error", 
         message: "Failed to parse receipt. Please try again." 
@@ -92,14 +77,14 @@ const UploadPage = () => {
       
       toast({
         title: "Error",
-        description: "Failed to parse the receipt. Please try again.",
+        description: error.message || "Failed to parse the receipt. Please try again.",
         variant: "destructive",
       });
     }
   };
 
   const handleFileUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0 || !user) return;
     
     const file = files[0];
     
@@ -116,11 +101,52 @@ const UploadPage = () => {
     
     try {
       const resizedFile = await handleImageResize(file);
-      await parseReceipt(resizedFile);
-    } catch (error) {
+      
+      // Upload file to Supabase Storage
+      const fileName = `${user.id}/${Date.now()}-${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('receipts')
+        .upload(fileName, resizedFile);
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('receipts')
+        .getPublicUrl(fileName);
+
+      // Create receipt record
+      const { data: receipt, error: receiptError } = await supabase
+        .from('receipts')
+        .insert([{
+          user_id: user.id,
+          file_url: publicUrl,
+          file_name: file.name,
+          parse_status: 'pending'
+        }])
+        .select()
+        .single();
+
+      if (receiptError) {
+        throw receiptError;
+      }
+
+      // Parse the receipt
+      await parseReceipt(resizedFile, receipt.id);
+      
+    } catch (error: any) {
+      console.error('Upload error:', error);
       setParseStatus({ 
         status: "error", 
-        message: "Upload failed. Please try again." 
+        message: error.message || "Upload failed. Please try again." 
+      });
+      
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload the receipt. Please try again.",
+        variant: "destructive",
       });
     }
   };

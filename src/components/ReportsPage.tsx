@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -13,6 +13,9 @@ import { Bar, Doughnut } from 'react-chartjs-2';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Expense, MonthlyReport } from "@/types/expense";
 import { getCategoryColor, allCategories } from "@/utils/categories";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 ChartJS.register(
   CategoryScale,
@@ -24,22 +27,49 @@ ChartJS.register(
   ArcElement
 );
 
-// Mock data for development 
-const mockExpenses: Expense[] = [
-  { id: "1", user_id: "user1", date: "2024-01-15", category: "Ushqim", description: "Grocery shopping", amount: 45.50, currency: "EUR", vendor: "Conad" },
-  { id: "2", user_id: "user1", date: "2024-01-14", category: "Transport", description: "Taxi ride", amount: 12.30, currency: "EUR", vendor: "Uber" },
-  { id: "3", user_id: "user1", date: "2024-01-13", category: "Teknologji", description: "Software subscription", amount: 29.99, currency: "EUR", vendor: "Microsoft" },
-  { id: "4", user_id: "user1", date: "2024-01-12", category: "Argëtim", description: "Movie tickets", amount: 18.00, currency: "EUR", vendor: "Cinema" },
-  { id: "5", user_id: "user1", date: "2024-02-10", category: "Ushqim", description: "Restaurant", amount: 32.00, currency: "EUR", vendor: "Pizza Place" },
-  { id: "6", user_id: "user1", date: "2024-02-08", category: "Transport", description: "Bus ticket", amount: 2.50, currency: "EUR", vendor: "City Transport" },
-  { id: "7", user_id: "user1", date: "2024-03-05", category: "Teknologji", description: "Phone accessories", amount: 25.00, currency: "EUR", vendor: "Tech Store" },
-];
-
 const ReportsPage = () => {
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (user) {
+      fetchExpenses();
+    }
+  }, [user]);
+
+  const fetchExpenses = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setExpenses(data || []);
+    } catch (error: any) {
+      console.error('Error fetching expenses:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load expenses. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
   const monthlyData = useMemo(() => {
     const monthlyMap = new Map<string, { total: number; categories: Record<string, number> }>();
     
-    mockExpenses.forEach(expense => {
+    expenses.forEach(expense => {
       const monthKey = expense.date.substring(0, 7); // YYYY-MM format
       
       if (!monthlyMap.has(monthKey)) {
@@ -60,17 +90,17 @@ const ReportsPage = () => {
         ...data
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
-  }, []);
+  }, [expenses]);
 
   const categoryTotals = useMemo(() => {
     const totals = Object.fromEntries(allCategories.map(cat => [cat, 0]));
     
-    mockExpenses.forEach(expense => {
+    expenses.forEach(expense => {
       totals[expense.category] += expense.amount;
     });
     
     return totals;
-  }, []);
+  }, [expenses]);
 
   const monthlyChartData = {
     labels: monthlyData.map(data => {
@@ -147,7 +177,7 @@ const ReportsPage = () => {
     },
   };
 
-  const totalSpent = mockExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const averagePerMonth = monthlyData.length > 0 ? totalSpent / monthlyData.length : 0;
 
   return (
@@ -155,7 +185,7 @@ const ReportsPage = () => {
       <div>
         <h1 className="text-3xl font-bold text-foreground">Raporte</h1>
         <p className="text-muted-foreground">
-          Analyze your spending patterns and trends
+          {loading ? "Loading your analytics..." : "Analyze your spending patterns and trends"}
         </p>
       </div>
 
@@ -194,7 +224,7 @@ const ReportsPage = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-primary">
-              {mockExpenses.length}
+              {expenses.length}
             </div>
             <p className="text-xs text-muted-foreground">
               Total expenses recorded
@@ -203,69 +233,83 @@ const ReportsPage = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {loading ? (
+        <div className="text-center py-8">
+          <div className="text-muted-foreground">Loading reports...</div>
+        </div>
+      ) : expenses.length === 0 ? (
+        <div className="text-center py-8">
+          <div className="text-muted-foreground">
+            No expenses found. Upload some receipts to see reports!
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Monthly Spending</CardTitle>
+              <CardDescription>
+                Track your spending trends over time
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px] flex items-center justify-center">
+                <Bar data={monthlyChartData} options={chartOptions} />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Spending by Category</CardTitle>
+              <CardDescription>
+                See how your money is distributed across categories
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px] flex items-center justify-center">
+                <Doughnut data={categoryChartData} options={doughnutOptions} />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!loading && expenses.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Monthly Spending</CardTitle>
+            <CardTitle>Category Breakdown</CardTitle>
             <CardDescription>
-              Track your spending trends over time
+              Detailed spending by category
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] flex items-center justify-center">
-              <Bar data={monthlyChartData} options={chartOptions} />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Spending by Category</CardTitle>
-            <CardDescription>
-              See how your money is distributed across categories
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] flex items-center justify-center">
-              <Doughnut data={categoryChartData} options={doughnutOptions} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Category Breakdown</CardTitle>
-          <CardDescription>
-            Detailed spending by category
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {allCategories.map(category => {
-              const amount = categoryTotals[category];
-              const percentage = totalSpent > 0 ? (amount / totalSpent) * 100 : 0;
-              
-              return (
-                <div key={category} className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div 
-                      className={`w-4 h-4 rounded-full bg-${getCategoryColor(category)}`}
-                    />
-                    <span className="font-medium">{category}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold">€{amount.toFixed(2)}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {percentage.toFixed(1)}%
+            <div className="space-y-4">
+              {allCategories.map(category => {
+                const amount = categoryTotals[category];
+                const percentage = totalSpent > 0 ? (amount / totalSpent) * 100 : 0;
+                
+                return (
+                  <div key={category} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div 
+                        className={`w-4 h-4 rounded-full bg-${getCategoryColor(category)}`}
+                      />
+                      <span className="font-medium">{category}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">€{amount.toFixed(2)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {percentage.toFixed(1)}%
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

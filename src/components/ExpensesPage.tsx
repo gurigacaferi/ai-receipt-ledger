@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, Download, Filter, Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,57 +9,53 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Expense, ExpenseCategory } from "@/types/expense";
 import { getCategoryColor, allCategories } from "@/utils/categories";
 import { cn } from "@/lib/utils";
-
-// Mock data for development
-const mockExpenses: Expense[] = [
-  {
-    id: "1",
-    user_id: "user1",
-    date: "2024-01-15",
-    category: "Ushqim",
-    description: "Grocery shopping",
-    amount: 45.50,
-    currency: "EUR",
-    vendor: "Conad"
-  },
-  {
-    id: "2", 
-    user_id: "user1",
-    date: "2024-01-14",
-    category: "Transport",
-    description: "Taxi ride",
-    amount: 12.30,
-    currency: "EUR",
-    vendor: "Uber"
-  },
-  {
-    id: "3",
-    user_id: "user1", 
-    date: "2024-01-13",
-    category: "Teknologji",
-    description: "Software subscription",
-    amount: 29.99,
-    currency: "EUR",
-    vendor: "Microsoft"
-  },
-  {
-    id: "4",
-    user_id: "user1",
-    date: "2024-01-12", 
-    category: "Argëtim",
-    description: "Movie tickets",
-    amount: 18.00,
-    currency: "EUR",
-    vendor: "Cinema"
-  }
-];
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 const ExpensesPage = () => {
-  const [expenses] = useState<Expense[]>(mockExpenses);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (user) {
+      fetchExpenses();
+    }
+  }, [user]);
+
+  const fetchExpenses = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false });
+
+      if (error) {
+        throw error;
+      }
+
+      setExpenses(data || []);
+    } catch (error: any) {
+      console.error('Error fetching expenses:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load expenses. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredExpenses = useMemo(() => {
     return expenses.filter(expense => {
@@ -193,41 +189,47 @@ const ExpensesPage = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredExpenses.map((expense) => (
-                <TableRow key={expense.id}>
-                  <TableCell className="font-medium">
-                    {new Date(expense.date).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>{expense.vendor}</TableCell>
-                  <TableCell>{expense.description}</TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant="secondary"
-                      className={cn(
-                        "text-white",
-                        `bg-${getCategoryColor(expense.category as ExpenseCategory)}`
-                      )}
-                    >
-                      {expense.category}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {expense.currency} {expense.amount.toFixed(2)}
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm">
-                      <Eye className="h-4 w-4" />
-                    </Button>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8">
+                    Loading expenses...
                   </TableCell>
                 </TableRow>
-              ))}
-              
-              {filteredExpenses.length === 0 && (
+              ) : filteredExpenses.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No expenses found matching your filters
+                    {expenses.length === 0 ? "No expenses found. Upload some receipts to get started!" : "No expenses found matching your filters"}
                   </TableCell>
                 </TableRow>
+              ) : (
+                filteredExpenses.map((expense) => (
+                  <TableRow key={expense.id}>
+                    <TableCell className="font-medium">
+                      {new Date(expense.date).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{expense.vendor}</TableCell>
+                    <TableCell>{expense.description}</TableCell>
+                    <TableCell>
+                      <Badge 
+                        variant="secondary"
+                        className={cn(
+                          "text-white",
+                          `bg-${getCategoryColor(expense.category as ExpenseCategory)}`
+                        )}
+                      >
+                        {expense.category}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {expense.currency} {expense.amount.toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="sm">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
