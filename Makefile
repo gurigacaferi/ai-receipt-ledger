@@ -4,7 +4,7 @@ help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
 	@echo 'Targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}\' $(MAKEFILE_LIST)
 
 dev: ## Start development environment
 	docker compose -f docker-compose.yml -f infra/docker-compose.override.yml up --build
