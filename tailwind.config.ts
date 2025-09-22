@@ -62,6 +62,8 @@ export default {
           transport: "hsl(var(--category-transport))",
           tech: "hsl(var(--category-tech))",
           entertainment: "hsl(var(--category-entertainment))",
+          health: "hsl(var(--category-health))",
+          clothing: "hsl(var(--category-clothing))",
           other: "hsl(var(--category-other))",
         },
         sidebar: {

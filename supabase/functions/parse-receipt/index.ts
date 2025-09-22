@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
+const geminiApiKey = 'AIzaSyCpXY-LmEc0ugml-Hn62WBk38UmDTq8VlU';
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -53,11 +53,12 @@ serve(async (req) => {
 
     let parsedData;
     
-    if (openAIApiKey) {
-      // Use OpenAI Vision API for parsing
-      parsedData = await parseReceiptWithAI(receipt.file_url);
-    } else {
-      // Use mock data for development
+    try {
+      // Use Gemini Vision API for parsing
+      parsedData = await parseReceiptWithGemini(receipt.file_url);
+    } catch (error) {
+      console.error('Gemini parsing failed, using mock data:', error);
+      // Use mock data as fallback
       parsedData = generateMockReceiptData();
     }
 
@@ -145,14 +146,15 @@ serve(async (req) => {
   }
 });
 
-async function parseReceiptWithAI(imageUrl: string) {
-  const systemPrompt = `Ti je një parser faturash. Kthe JSON strikt sipas skemës më poshtë. Mos shto tekst tjetër.
+async function parseReceiptWithGemini(imageUrl: string) {
+  const systemPrompt = `You are a receipt parser. Return ONLY valid JSON according to the schema below. Do not add any other text.
+
 Schema:
 {
   "vendor": "string",
   "invoice_no": "string|null",
   "invoice_date": "YYYY-MM-DD",
-  "currency": "ISO 4217",
+  "currency": "ISO 4217 code (EUR, USD, etc)",
   "items": [
     {"description":"string","qty":1,"unit_price":0.0,"line_total":0.0,"category":"auto"}
   ],
@@ -160,53 +162,100 @@ Schema:
   "tax": 0.0,
   "total": 0.0,
   "guessed_categories": true
-}`;
+}
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${openAIApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { 
-          role: 'user', 
-          content: [
-            { type: 'text', text: 'Lexo faturën dhe kthe JSON' },
-            { type: 'image_url', image_url: { url: imageUrl } }
-          ]
-        }
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1000
-    }),
-  });
+Instructions:
+- Extract all visible text from the receipt
+- Identify vendor name, date, items, and amounts
+- For items, set category to "auto" - it will be categorized later
+- Use proper currency code (EUR for Euro, USD for Dollar, etc.)
+- Ensure all numbers are valid decimals
+- If date format is unclear, use YYYY-MM-DD format
+- Return ONLY the JSON object, no other text`;
 
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  
   try {
-    const parsedData = JSON.parse(content);
-    
-    // Auto-categorize items if not already categorized
-    if (parsedData.items) {
-      parsedData.items = parsedData.items.map((item: any) => ({
-        ...item,
-        category: item.category === 'auto' ? categorizeExpense(item.description) : item.category
-      }));
+    // First, fetch the image to convert it to base64
+    const imageResponse = await fetch(imageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to fetch image: ${imageResponse.statusText}`);
     }
     
-    return parsedData;
-  } catch (parseError) {
-    console.error('Error parsing OpenAI response:', parseError);
-    throw new Error('Invalid JSON response from OpenAI');
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const base64Image = btoa(String.fromCharCode(...new Uint8Array(imageBuffer)));
+    
+    // Determine image type from URL or default to jpeg
+    const imageType = imageUrl.toLowerCase().includes('.png') ? 'image/png' : 'image/jpeg';
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: systemPrompt },
+            {
+              inline_data: {
+                mime_type: imageType,
+                data: base64Image
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1000,
+          responseMimeType: "application/json"
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Gemini API error:', errorText);
+      throw new Error(`Gemini API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      throw new Error('Invalid response structure from Gemini API');
+    }
+
+    const content = data.candidates[0].content.parts[0].text;
+    
+    try {
+      const parsedData = JSON.parse(content);
+      
+      // Auto-categorize items if not already categorized
+      if (parsedData.items) {
+        parsedData.items = parsedData.items.map((item: any) => ({
+          ...item,
+          category: item.category === 'auto' ? categorizeExpense(parsedData.vendor, item.description) : item.category
+        }));
+      }
+      
+      // Ensure required fields have default values
+      return {
+        vendor: parsedData.vendor || 'Unknown Vendor',
+        invoice_no: parsedData.invoice_no || null,
+        invoice_date: parsedData.invoice_date || new Date().toISOString().split('T')[0],
+        currency: parsedData.currency || 'EUR',
+        items: parsedData.items || [],
+        subtotal: parseFloat(parsedData.subtotal) || 0,
+        tax: parseFloat(parsedData.tax) || 0,
+        total: parseFloat(parsedData.total) || 0,
+        guessed_categories: true
+      };
+    } catch (parseError) {
+      console.error('Error parsing Gemini response:', parseError);
+      console.error('Raw response:', content);
+      throw new Error('Invalid JSON response from Gemini');
+    }
+  } catch (error) {
+    console.error('Gemini API request failed:', error);
+    throw error;
   }
 }
 
@@ -248,22 +297,40 @@ function generateMockReceiptData() {
   return mockData;
 }
 
-function categorizeExpense(text: string): string {
-  if (!text) return 'Tjetër';
+function categorizeExpense(vendor?: string, description?: string): string {
+  const text = `${vendor || ''} ${description || ''}`.toLowerCase();
   
-  const lowerText = text.toLowerCase();
   const categories = {
-    'ushqim': ['market', 'supermarket', 'conad', 'lidl', 'carrefour', 'food', 'restaurant', 'bar', 'cafe', 'pane', 'qumësht', 'ushqim'],
-    'transport': ['uber', 'taxi', 'bus', 'train', 'metro', 'benzinë', 'transport', 'parking'],
-    'teknologji': ['apple', 'microsoft', 'google', 'amazon', 'netflix', 'spotify', 'teknologji', 'software'],
-    'argëtim': ['playstation', 'xbox', 'cinema', 'theater', 'concert', 'sport', 'argëtim', 'entertainment'],
-    'shëndetësi': ['farmaci', 'mjek', 'spital', 'dentist', 'shëndet', 'health', 'medicine'],
-    'veshmbathje': ['zara', 'h&m', 'nike', 'adidas', 'fashion', 'clothing', 'veshje']
+    'Ushqim': [
+      'market', 'supermarket', 'conad', 'lidl', 'carrefour', 'food', 'restaurant', 
+      'bar', 'cafe', 'pane', 'qumësht', 'ushqim', 'grocery', 'bakery', 'pizza',
+      'bread', 'milk', 'meat', 'fruit', 'vegetable', 'drink', 'water', 'coffee'
+    ],
+    'Transport': [
+      'uber', 'taxi', 'bus', 'train', 'metro', 'benzinë', 'transport', 'parking',
+      'fuel', 'gas', 'petrol', 'station', 'ticket', 'flight', 'airline'
+    ],
+    'Teknologji': [
+      'apple', 'microsoft', 'google', 'amazon', 'netflix', 'spotify', 'teknologji', 
+      'software', 'computer', 'phone', 'laptop', 'tablet', 'electronics', 'tech'
+    ],
+    'Argëtim': [
+      'playstation', 'xbox', 'cinema', 'theater', 'concert', 'sport', 'argëtim', 
+      'entertainment', 'game', 'movie', 'music', 'book', 'magazine'
+    ],
+    'Shëndetësi': [
+      'farmaci', 'mjek', 'spital', 'dentist', 'shëndet', 'health', 'medicine',
+      'pharmacy', 'doctor', 'hospital', 'clinic', 'medical'
+    ],
+    'Veshmbathje': [
+      'zara', 'h&m', 'nike', 'adidas', 'fashion', 'clothing', 'veshje',
+      'shirt', 'pants', 'shoes', 'dress', 'jacket', 'clothes'
+    ]
   };
 
   for (const [category, keywords] of Object.entries(categories)) {
-    if (keywords.some(keyword => lowerText.includes(keyword))) {
-      return category.charAt(0).toUpperCase() + category.slice(1);
+    if (keywords.some(keyword => text.includes(keyword))) {
+      return category;
     }
   }
 

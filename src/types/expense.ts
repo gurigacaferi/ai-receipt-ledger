@@ -56,6 +56,8 @@ export type ExpenseCategory =
   | "Transport" 
   | "Teknologji" 
   | "Argëtim" 
+  | "Shëndetësi"
+  | "Veshmbathje"
   | "Tjetër";
 
 export interface ParseStatus {

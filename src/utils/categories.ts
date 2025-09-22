@@ -10,6 +10,18 @@ const categoryRules: Record<string, ExpenseCategory> = {
   "cafe": "Ushqim",
   "bakery": "Ushqim",
   "food": "Ushqim",
+  "bread": "Ushqim",
+  "milk": "Ushqim",
+  "meat": "Ushqim",
+  "fruit": "Ushqim",
+  "vegetable": "Ushqim",
+  "drink": "Ushqim",
+  "water": "Ushqim",
+  "coffee": "Ushqim",
+  "pizza": "Ushqim",
+  "conad": "Ushqim",
+  "lidl": "Ushqim",
+  "carrefour": "Ushqim",
   
   // Transport
   "uber": "Transport",
@@ -20,6 +32,11 @@ const categoryRules: Record<string, ExpenseCategory> = {
   "fuel": "Transport",
   "gas": "Transport",
   "parking": "Transport",
+  "petrol": "Transport",
+  "station": "Transport",
+  "ticket": "Transport",
+  "flight": "Transport",
+  "airline": "Transport",
   
   // Technology
   "apple": "Teknologji",
@@ -30,6 +47,9 @@ const categoryRules: Record<string, ExpenseCategory> = {
   "software": "Teknologji",
   "computer": "Teknologji",
   "phone": "Teknologji",
+  "laptop": "Teknologji",
+  "tablet": "Teknologji",
+  "electronics": "Teknologji",
   
   // Entertainment
   "playstation": "Argëtim",
@@ -39,6 +59,13 @@ const categoryRules: Record<string, ExpenseCategory> = {
   "theater": "Argëtim",
   "game": "Argëtim",
   "entertainment": "Argëtim",
+  "xbox": "Argëtim",
+  "concert": "Argëtim",
+  "sport": "Argëtim",
+  "movie": "Argëtim",
+  "music": "Argëtim",
+  "book": "Argëtim",
+  "magazine": "Argëtim",
 };
 
 export function categorizeExpense(vendor?: string, description?: string): ExpenseCategory {
@@ -59,6 +86,8 @@ export function getCategoryColor(category: ExpenseCategory): string {
     "Transport": "category-transport", 
     "Teknologji": "category-tech",
     "Argëtim": "category-entertainment",
+    "Shëndetësi": "category-health",
+    "Veshmbathje": "category-clothing",
     "Tjetër": "category-other",
   };
   
@@ -70,5 +99,7 @@ export const allCategories: ExpenseCategory[] = [
   "Transport", 
   "Teknologji",
   "Argëtim",
+  "Shëndetësi",
+  "Veshmbathje",
   "Tjetër"
 ];

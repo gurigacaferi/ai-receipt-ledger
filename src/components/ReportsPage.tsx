@@ -128,6 +128,8 @@ const ReportsPage = () => {
           'hsl(var(--category-transport))',
           'hsl(var(--category-tech))',
           'hsl(var(--category-entertainment))',
+          'hsl(var(--category-health))',
+          'hsl(var(--category-clothing))',
           'hsl(var(--category-other))',
         ],
         borderWidth: 2,
